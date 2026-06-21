@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+# Azure Developer CLI (azd) configuration for deploying the AI Transcript App
+# backend (FastAPI) to Azure App Service. Adapted from the Azure quickstart
+# "Deploy a Python web app to Azure App Service".
+# To learn more, visit https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/azd-schema
+
+name: ai-transcript-app-voice-summarizer
+metadata:
+  template: ai-transcript-app-voice-summarizer@0.0.1-beta
+services:
+  web:
+    # Deploys the FastAPI backend. The React frontend is hosted separately
+    # (see the README "Web app quick start" section).
+    project: ./backend
+    language: python
+    host: appservice
