@@ -215,6 +215,38 @@ npm install && npm run dev
 
 **Browser:** Open `http://localhost:3000`
 
+### Container deployment (Docker + Docker Compose)
+
+This repository now includes production Docker assets for the React frontend and FastAPI backend.
+
+1. Optionally export deployment settings for the backend:
+
+   ```bash
+   export WHISPER_MODEL=base.en
+   export LLM_BASE_URL=http://host.docker.internal:11434/v1
+   export LLM_API_KEY=ollama
+   export LLM_MODEL=gemma3:4b
+   ```
+
+2. Build and start the production stack:
+
+   ```bash
+   docker compose up --build
+   ```
+
+3. Open the app at `http://localhost` and, if needed, the API directly at `http://localhost:3000/api/status`.
+
+The frontend container serves the Vite build through nginx on port **80** and proxies `/api/*` requests to the backend container on port **3000**. A named Docker volume persists the backend model cache between restarts so Whisper assets do not need to be downloaded every time.
+
+### GitHub Actions Azure deployment
+
+`.github/workflows/deploy.yml` validates the frontend and backend on every pull request, then on pushes to `main` it builds both Docker images, pushes them to Azure Container Registry, and deploys the stack to Azure Container Instances.
+
+Configure the workflow with these repository settings before enabling deployment:
+
+- **Variables:** `ACR_NAME`, `ACR_LOGIN_SERVER`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `ACI_CONTAINER_GROUP`, `ACI_DNS_LABEL`, and optional `LLM_BASE_URL`, `LLM_MODEL`, `WHISPER_MODEL`
+- **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, and optional `LLM_API_KEY`
+
 ### Web app quick start (Azure App Service)
 
 Want to run the backend in the cloud instead of locally? This repo ships an [Azure Developer CLI (`azd`)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/) deployment, adapted from the Azure quickstart [Deploy a Python web app to Azure App Service](https://learn.microsoft.com/en-us/azure/app-service/quickstart-python). It provisions a Linux App Service plan and an App Service, then deploys the **FastAPI backend** (`backend/`) and starts it with `uvicorn`.
