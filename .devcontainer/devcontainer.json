@@ -8,16 +8,16 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        // Python - Backend
         "ms-python.python",
         "ms-python.vscode-pylance",
         "ms-python.black-formatter",
         "charliermarsh.ruff",
-        // TypeScript/JavaScript - Frontend
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
-        // Docker
-        "ms-azuretools.vscode-docker"
+        "ms-azuretools.vscode-docker",
+        "ms-azuretools.vscode-azure-github-copilot",
+        "ms-azuretools.azure-dev",
+        "ms-azuretools.vscode-azurefunctions"
       ],
       "settings": {
         // Devcontainer-specific Python interpreter path

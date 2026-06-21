@@ -26,5 +26,13 @@
     "typescript",
     "typescriptreact"
   ],
-  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python"
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
+  "python-envs.pythonProjects": [
+    {
+      "path": "",
+      "envManager": "ms-python.python:venv",
+      "packageManager": "ms-python.python:pip"
+    }
+  ],
+  "notebook.defaultFormatter": "esbenp.prettier-vscode"
 }

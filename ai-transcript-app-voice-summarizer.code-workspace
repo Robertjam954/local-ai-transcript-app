@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"ruff.enable": true,
+		"notebook.defaultFormatter": "esbenp.prettier-vscode"
+	}
+}
