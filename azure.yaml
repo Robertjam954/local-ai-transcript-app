@@ -10,8 +10,21 @@ metadata:
   template: ai-transcript-app-voice-summarizer@0.0.1-beta
 services:
   web:
-    # Deploys the FastAPI backend. The React frontend is hosted separately
-    # (see the README "Web app quick start" section).
+    # Deploys the FastAPI backend, which also serves the built React SPA from a
+    # single origin. The prepackage hook (below) builds the frontend and stages
+    # it into backend/static before the service is packaged for App Service.
     project: ./backend
     language: python
     host: appservice
+
+# Project-level hooks run with the repo root as the working directory, so the
+# script path below resolves correctly. prepackage fires before the `web`
+# service is packaged during `azd package` / `azd deploy` / `azd up`.
+hooks:
+  prepackage:
+    posix:
+      shell: sh
+      run: ./scripts/build_frontend.sh
+    windows:
+      shell: pwsh
+      run: ./scripts/build_frontend.ps1

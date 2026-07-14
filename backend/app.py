@@ -6,6 +6,7 @@ from typing import Annotated
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from transcription import TranscriptionService
@@ -118,3 +119,12 @@ async def clean_text(request: CleanRequest):
             status_code=502,
             detail="LLM cleaning failed. Check the backend terminal for details.",
         ) from e
+
+
+# Serve the built React SPA (single-origin deployment). The frontend build is
+# staged into backend/static by the azd `prepackage` hook (see azure.yaml /
+# scripts/build_frontend.*). Mounted at "/" AFTER the /api/* routes above so the
+# API keeps priority; guarded so local dev runs fine without a build present.
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(STATIC_DIR):
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="spa")
