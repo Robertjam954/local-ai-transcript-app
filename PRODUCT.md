@@ -38,3 +38,7 @@ The project also serves as a portfolio/learning base for aspiring AI engineers, 
 - The recommended setup is a devcontainer (locally via Docker or in GitHub Codespaces) that provisions the app and an Ollama model automatically; a manual install is also supported.
 
 The README frames the app explicitly as a base to make your own: swapping in stronger models, targeting a specific industry, or adding streaming and multi-language support are all suggested directions.
+
+## Live Demo
+
+A public, in-browser demo lives at [robertjam954.github.io/local-ai-transcript-app/demo.html](https://robertjam954.github.io/local-ai-transcript-app/demo.html). It runs Whisper `tiny.en` on the visitor's own device (WebAssembly/WebGPU via transformers.js), so it can be tried instantly without installing anything - and, true to the product's privacy stance, no audio is ever uploaded. The full local app remains the primary experience, with a larger Whisper model and local LLM cleanup.

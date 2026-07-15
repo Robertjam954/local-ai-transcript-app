@@ -23,6 +23,7 @@ urlFragment: ai-transcript-app-voice-summarizer
 
 # AI Transcript App - Voice transcription and cleanup
 
+**🌐 Live demo:** Try an in-browser version at [robertjam954.github.io/local-ai-transcript-app/demo.html](https://robertjam954.github.io/local-ai-transcript-app/demo.html) - Whisper runs on-device via WebAssembly/WebGPU, so no audio is uploaded anywhere. The [portfolio page](https://robertjam954.github.io/local-ai-transcript-app/) has the full project overview.
 
 ##### Table of Contents
 - [AI Transcript App - Voice transcription and cleanup](#ai-transcript-app---voice-transcription-and-cleanup)
@@ -141,7 +142,7 @@ The recommended setup is a devcontainer, which provisions the app and an Ollama 
 - [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
 - A machine with 8+ CPU cores and 16GB RAM recommended (the default setup runs an LLM on CPU)
 
-For manual installation you will instead need Python 3.12+, Node.js 24+, [uv](https://docs.astral.sh/uv/), and an LLM server ([Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/)).
+For manual installation you will instead need Python 3.12 or 3.13 (3.14 is not yet supported - `ctranslate2`, used by faster-whisper, has no 3.14 wheels; pin with `uv run --python 3.13`), Node.js 24+, [uv](https://docs.astral.sh/uv/), and an LLM server ([Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/)).
 
 ### Products used
 
@@ -190,6 +191,8 @@ The devcontainer is the easiest supported method for beginners. If you install m
 - Copy `backend/.env.example` to `backend/.env` and configure
 - Install dependencies with `uv sync` (backend) and `npm install` (frontend)
 - Start your LLM server and pull a model: `ollama pull llama3.1:8b`
+
+> **⚠️ Running outside the devcontainer?** The devcontainer default `LLM_BASE_URL=http://ollama:11434/v1` uses a Docker-internal hostname that does not resolve on the host. Use `http://localhost:11434/v1` for a host-installed Ollama, or `http://localhost:1234/v1` with `LLM_API_KEY=lm-studio` for LM Studio (start its server with `lms server start`).
 
 ### Running the app
 
