@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live Demo - AI Transcript App</title>
+<meta name="description" content="Try the AI Transcript App in your browser: Whisper speech-to-text runs entirely on your device via WebAssembly/WebGPU. No audio is uploaded anywhere." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0b0f17;
+    --panel: #121826;
+    --panel-2: #0f1420;
+    --border: #1e2838;
+    --text: #e6ebf5;
+    --muted: #9aa7bd;
+    --accent: #5eead4;
+    --accent-2: #6ea8fe;
+    --good: #4ade80;
+    --bad: #f87171;
+    --chip: #182234;
+    --radius: 14px;
+    --max: 860px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: radial-gradient(1200px 600px at 70% -10%, #13322f 0%, transparent 60%),
+                radial-gradient(900px 500px at 0% 0%, #16233b 0%, transparent 55%),
+                var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 22px; }
+  nav { padding: 18px 0; border-bottom: 1px solid var(--border); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+  .nav-links a { color: var(--muted); text-decoration: none; margin-left: 18px; font-size: 14.5px; }
+  .nav-links a:hover { color: var(--text); }
+  header { padding: 46px 0 8px; }
+  h1 { font-size: clamp(26px, 4.5vw, 38px); line-height: 1.15; margin: 0 0 12px; font-weight: 800; }
+  .lede { color: var(--muted); font-size: 16.5px; max-width: 640px; margin: 0 0 8px; }
+  .privacy {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 10px;
+    background: var(--chip); border: 1px solid var(--border); border-radius: 999px;
+    padding: 7px 14px; font-size: 13.5px; color: var(--accent);
+  }
+  section { padding: 22px 0; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 22px;
+  }
+  .panel + .panel { margin-top: 18px; }
+  .panel h2 { margin: 0 0 6px; font-size: 18px; }
+  .panel .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px;
+    border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14.5px;
+    border: 1px solid var(--border); color: var(--text); background: var(--panel-2);
+    cursor: pointer; font-family: inherit; transition: border-color .15s, background .15s;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); color: #06251f; border-color: transparent; }
+  .btn.primary:hover:not(:disabled) { background: #7df3e0; border-color: transparent; }
+  .btn.recording { background: #3b1420; border-color: var(--bad); color: var(--bad); }
+  .drop {
+    border: 1.5px dashed var(--border); border-radius: 10px; padding: 14px 18px;
+    color: var(--muted); font-size: 14px; flex: 1 1 240px; text-align: center; cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent-2); color: var(--text); }
+  .status { margin-top: 14px; font-size: 13.5px; color: var(--muted); font-family: 'JetBrains Mono', monospace; min-height: 20px; }
+  .status .ok { color: var(--good); }
+  .status .err { color: var(--bad); }
+  .bar { height: 6px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); overflow: hidden; margin-top: 8px; display: none; }
+  .bar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width .2s; }
+  textarea {
+    width: 100%; min-height: 110px; resize: vertical; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+    padding: 14px; font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.55;
+  }
+  textarea:focus { outline: none; border-color: var(--accent-2); }
+  .row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .row-head h3 { margin: 0; font-size: 14.5px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  .copy { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; font-family: inherit; }
+  .copy:hover { color: var(--text); border-color: var(--accent); }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; color: var(--accent-2); font-size: 14px; }
+  .llm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .llm-grid label { font-size: 12.5px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .llm-grid input {
+    width: 100%; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2);
+    color: var(--text); padding: 10px 12px; font-size: 13.5px; font-family: 'JetBrains Mono', monospace;
+  }
+  .llm-grid input:focus { outline: none; border-color: var(--accent-2); }
+  .full { grid-column: 1 / -1; }
+  .note { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  footer { border-top: 1px solid var(--border); margin-top: 40px; padding: 26px 0 40px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  footer a { color: var(--muted); }
+  @media (max-width: 640px) { .llm-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span> Voice Summarizer · Demo</div>
+    <div class="nav-links">
+      <a href="index.html">About</a>
+      <a href="https://github.com/Robertjam954/local-ai-transcript-app">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <h1>Try it - right here in your browser.</h1>
+    <p class="lede">
+      This demo runs the same idea as the full app, shrunk to fit a static page: OpenAI's Whisper
+      (tiny.en) executes <b>on your device</b> via WebAssembly/WebGPU. The full local app uses a larger
+      Whisper model plus a local LLM for cleanup.
+    </p>
+    <span class="privacy">🔒 Nothing is uploaded - audio and text stay on your device</span>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+
+    <div class="panel">
+      <h2>1 · Capture</h2>
+      <p class="sub">Record from your microphone or drop in an audio file (mp3, wav, webm, ogg, m4a). English only.</p>
+      <div class="controls">
+        <button class="btn primary" id="recordBtn">🎙️ Record</button>
+        <div class="drop" id="drop">…or drop / choose an audio file</div>
+        <input type="file" id="file" accept="audio/*,.m4a,.ogg,.webm" hidden />
+      </div>
+      <div class="status" id="status">Model (~40 MB) downloads on first use, then is cached by your browser.</div>
+      <div class="bar" id="bar"><i id="barFill"></i></div>
+    </div>
+
+    <div class="panel">
+      <div class="row-head">
+        <h3>Raw transcript</h3>
+        <button class="copy" data-copy="raw">Copy</button>
+      </div>
+      <textarea id="raw" placeholder="Your transcription appears here - or paste existing messy text to clean it up."></textarea>
+
+      <details id="llmBox">
+        <summary>2 · Optional: clean it up with an LLM (bring your own endpoint)</summary>
+        <div class="llm-grid">
+          <div>
+            <label for="baseUrl">OpenAI-compatible base URL</label>
+            <input id="baseUrl" placeholder="https://api.openai.com/v1" value="https://api.openai.com/v1" />
+          </div>
+          <div>
+            <label for="model">Model</label>
+            <input id="model" placeholder="gpt-4o-mini" value="gpt-4o-mini" />
+          </div>
+          <div class="full">
+            <label for="apiKey">API key (kept in this page's memory only - never stored or sent anywhere except the endpoint above)</label>
+            <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+          </div>
+        </div>
+        <div class="controls" style="margin-top:14px;">
+          <button class="btn" id="cleanBtn">✨ Clean transcript</button>
+        </div>
+        <p class="note">
+          The request goes straight from your browser to the endpoint you specify - this site has no
+          server and never sees your key. In the full app this step runs against a local model
+          (Ollama / LM Studio), so no key is needed at all.
+        </p>
+      </details>
+    </div>
+
+    <div class="panel" id="cleanPanel" style="display:none;">
+      <div class="row-head">
+        <h3>Cleaned transcript</h3>
+        <button class="copy" data-copy="cleaned">Copy</button>
+      </div>
+      <textarea id="cleaned" readonly></textarea>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>Built by Robert James · AI Engineering portfolio</div>
+    <div class="nav-links">
+      <a href="index.html">Project overview</a>
+      <a href="https://github.com/Robertjam954/local-ai-transcript-app">Source</a>
+    </div>
+  </div>
+</footer>
+
+<script type="module">
+const SYSTEM_PROMPT = `You are a transcript editor. Transform raw transcripts into clear, concise text.
+
+INSTRUCTIONS:
+- Remove filler words (um, uh, like, you know, basically, actually, etc.)
+- Remove redundant statements and rambling
+- Fix grammar and speech-to-text errors
+- Preserve key points, technical details, names, numbers, and action items
+- Use proper punctuation and maintain the speaker's tone
+
+Return ONLY the cleaned text with NO preamble.`;
+
+const $ = (id) => document.getElementById(id);
+const status = (html) => { $('status').innerHTML = html; };
+
+let transcriber = null;
+let loading = null;
+
+async function getTranscriber() {
+  if (transcriber) return transcriber;
+  if (loading) return loading;
+  loading = (async () => {
+    status('Loading transformers.js…');
+    const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.3');
+    const device = navigator.gpu ? 'webgpu' : 'wasm';
+    $('bar').style.display = 'block';
+    const seen = {};
+    transcriber = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-tiny.en', {
+      device,
+      dtype: device === 'webgpu' ? 'fp32' : 'q8',
+      progress_callback: (p) => {
+        if (p.status === 'progress' && p.total) {
+          seen[p.file] = [p.loaded, p.total];
+          let l = 0, t = 0;
+          for (const [a, b] of Object.values(seen)) { l += a; t += b; }
+          $('barFill').style.width = `${Math.round((l / t) * 100)}%`;
+          status(`Downloading Whisper tiny.en… ${Math.round((l / t) * 100)}% (cached after first load)`);
+        }
+      },
+    });
+    $('bar').style.display = 'none';
+    status(`<span class="ok">Whisper ready</span> · running on ${device === 'webgpu' ? 'WebGPU' : 'WebAssembly (CPU)'} - fully on-device`);
+    return transcriber;
+  })();
+  return loading;
+}
+
+async function decodeTo16kMono(blob) {
+  const buf = await blob.arrayBuffer();
+  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  const audio = await ctx.decodeAudioData(buf);
+  let data;
+  if (audio.numberOfChannels > 1) {
+    const a = audio.getChannelData(0), b = audio.getChannelData(1);
+    data = new Float32Array(a.length);
+    for (let i = 0; i < a.length; i++) data[i] = (a[i] + b[i]) / 2;
+  } else {
+    data = audio.getChannelData(0);
+  }
+  ctx.close();
+  return data;
+}
+
+async function transcribe(blob, label) {
+  try {
+    const asr = await getTranscriber();
+    status(`Transcribing ${label}… (on-device)`);
+    const audio = await decodeTo16kMono(blob);
+    if (audio.length < 1600) { status('<span class="err">Audio too short - try again.</span>'); return; }
+    const t0 = performance.now();
+    const out = await asr(audio, { chunk_length_s: 30, stride_length_s: 5 });
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    $('raw').value = out.text.trim();
+    status(`<span class="ok">Done in ${secs}s</span> · ${(audio.length / 16000).toFixed(1)}s of audio, transcribed on your device`);
+  } catch (e) {
+    console.error(e);
+    status(`<span class="err">Transcription failed: ${e.message || e}</span>`);
+  }
+}
+
+// --- Microphone recording ---
+let recorder = null, chunks = [];
+$('recordBtn').addEventListener('click', async () => {
+  const btn = $('recordBtn');
+  if (recorder && recorder.state === 'recording') {
+    recorder.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      btn.textContent = '🎙️ Record';
+      btn.classList.remove('recording');
+      transcribe(new Blob(chunks, { type: recorder.mimeType }), 'recording');
+    };
+    recorder.start();
+    btn.textContent = '⏹ Stop';
+    btn.classList.add('recording');
+    status('Recording… click Stop when finished.');
+    getTranscriber(); // warm the model while recording
+  } catch (e) {
+    status(`<span class="err">Microphone unavailable: ${e.message || e}</span>`);
+  }
+});
+
+// --- File upload ---
+const drop = $('drop');
+drop.addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', (e) => {
+  if (e.target.files[0]) transcribe(e.target.files[0], e.target.files[0].name);
+});
+['dragover', 'dragleave', 'drop'].forEach((ev) =>
+  drop.addEventListener(ev, (e) => {
+    e.preventDefault();
+    drop.classList.toggle('over', ev === 'dragover');
+    if (ev === 'drop' && e.dataTransfer.files[0]) transcribe(e.dataTransfer.files[0], e.dataTransfer.files[0].name);
+  })
+);
+
+// --- Optional LLM cleanup (browser -> user's own endpoint; no server involved) ---
+$('cleanBtn').addEventListener('click', async () => {
+  const text = $('raw').value.trim();
+  if (!text) { status('<span class="err">Nothing to clean - transcribe or paste text first.</span>'); return; }
+  const base = $('baseUrl').value.trim().replace(/\/+$/, '');
+  const key = $('apiKey').value.trim();
+  const model = $('model').value.trim();
+  if (!base || !model) { status('<span class="err">Base URL and model are required.</span>'); return; }
+  $('cleanBtn').disabled = true;
+  status('Cleaning with LLM… (request goes directly from your browser to your endpoint)');
+  try {
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: text },
+        ],
+        temperature: 0.3,
+        max_tokens: 400,
+      }),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${await res.text().then((t) => t.slice(0, 200))}`);
+    const json = await res.json();
+    $('cleaned').value = (json.choices?.[0]?.message?.content || '').trim();
+    $('cleanPanel').style.display = 'block';
+    $('cleanPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    status('<span class="ok">Cleaned ✓</span>');
+  } catch (e) {
+    status(`<span class="err">LLM cleanup failed: ${String(e.message || e).slice(0, 200)}</span>`);
+  } finally {
+    $('cleanBtn').disabled = false;
+  }
+});
+
+// --- Copy buttons ---
+document.querySelectorAll('.copy').forEach((b) =>
+  b.addEventListener('click', async () => {
+    await navigator.clipboard.writeText($(b.dataset.copy).value);
+    const old = b.textContent;
+    b.textContent = 'Copied ✓';
+    setTimeout(() => (b.textContent = old), 1200);
+  })
+);
+</script>
+
+</body>
+</html>
