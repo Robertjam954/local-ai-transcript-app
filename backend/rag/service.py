@@ -14,7 +14,22 @@ from openai import OpenAI
 
 from .config import RagConfig, load_rag_config
 from .index import Indexer
-from .store import HybridStore, Retrieved, check_dependencies
+from .store import Retrieved
+
+
+def _build_store(config: RagConfig):
+    """Pick the vector-store backend. Prefer ChromaDB when installed; otherwise
+    fall back to the dependency-light NumPy store (needs no extra installs)."""
+    try:
+        import chromadb  # noqa: F401
+
+        from .store import HybridStore
+
+        return HybridStore(config), "chromadb"
+    except ImportError:
+        from .store_numpy import NumpyStore
+
+        return NumpyStore(config), "numpy"
 
 ANSWER_SYSTEM_PROMPT = (
     "You answer questions using ONLY the provided transcript excerpts. "
@@ -42,16 +57,17 @@ class RagService:
 
     def __init__(self, config: RagConfig | None = None):
         self.config = config or load_rag_config()
-        self._store: HybridStore | None = None
+        self._store = None
+        self._backend: str | None = None
         self._indexer: Indexer | None = None
         self._chat: OpenAI | None = None
 
     # -- lifecycle ---------------------------------------------------------
 
     @property
-    def store(self) -> HybridStore:
+    def store(self):
         if self._store is None:
-            self._store = HybridStore(self.config)
+            self._store, self._backend = _build_store(self.config)
         return self._store
 
     @property
@@ -68,19 +84,28 @@ class RagService:
         return self._chat
 
     def status(self) -> dict:
-        """Report readiness without loading models or contacting Ollama."""
-        deps_ok, reason = check_dependencies()
+        """Report readiness without loading models or contacting Ollama.
+
+        RAG is available whenever it is enabled and a store backend can be
+        built. ChromaDB is preferred; the NumPy fallback needs no extra installs,
+        so availability does not depend on optional deps being present.
+        """
+        ok = self.config.enabled
+        reason = "ok" if ok else "RAG is disabled (set RAG_ENABLED=true)."
         indexed = None
-        if deps_ok:
+        backend = None
+        if ok:
             try:
                 indexed = self.store.count()
+                backend = self._backend
             except Exception as exc:  # noqa: BLE001 - report, don't crash
+                ok = False
                 reason = f"store unavailable: {exc}"
-                deps_ok = False
         return {
             "enabled": self.config.enabled,
-            "available": deps_ok and self.config.enabled,
-            "reason": reason if not (deps_ok and self.config.enabled) else "ok",
+            "available": ok,
+            "reason": reason,
+            "backend": backend,
             "embed_model": self.config.embed_model,
             "llm_model": self.config.llm_model,
             "ollama_base_url": self.config.ollama_base_url,

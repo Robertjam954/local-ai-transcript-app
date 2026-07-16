@@ -6,6 +6,7 @@ import { UploadZone } from './components/UploadZone';
 import { TextInputZone } from './components/TextInputZone';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TranscriptionResults } from './components/TranscriptionResults';
+import { TranscriptSearch } from './components/TranscriptSearch';
 import { ErrorMessage } from './components/ErrorMessage';
 import { Footer } from './components/Footer';
 
@@ -362,6 +363,9 @@ function App() {
             setIsOriginalExpanded(!isOriginalExpanded)
           }
         />
+
+        <TranscriptSearch currentTranscript={cleanedText ?? rawText} />
+
         <Footer />
       </div>
     </div>

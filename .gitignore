@@ -68,3 +68,6 @@ STUDENT_PROFILE.md
 exercise/STUDENT_PROFILE.md
 exercise/python/*.py
 exercise/typescript/*.ts
+
+# Local RAG vector store / indexed transcript data (generated)
+backend/rag_data/
