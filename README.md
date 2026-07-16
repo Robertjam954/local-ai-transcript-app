@@ -271,6 +271,34 @@ The devcontainer automatically creates `backend/.env` with working Ollama defaul
 - `LLM_API_KEY` - API key
 - `LLM_MODEL` - Model name
 
+### Local RAG over your transcripts (optional, fully offline)
+
+An optional, **100% local** retrieval layer lets you search and ask questions across your past transcripts. It is **off by default** and its dependencies are not installed unless you opt in, so the core app is unaffected. The design is adapted from [ObsidianRAG](https://github.com/Vasallo94/ObsidianRAG) - hybrid vector + BM25 retrieval, optional CrossEncoder reranking, incremental indexing, and answers with source citations - but kept dependency-light: [ChromaDB](https://www.trychroma.com/) for vectors and [Ollama](https://ollama.com/) (via its OpenAI-compatible endpoint) for both embeddings and generation.
+
+To enable it:
+
+```bash
+# 1. Install Ollama and pull an embedding + chat model
+ollama pull nomic-embed-text
+ollama pull gemma3
+
+# 2. Install the optional RAG dependencies (add --extra rag-rerank for reranking)
+cd backend && uv sync --extra rag
+
+# 3. Turn it on in backend/.env
+RAG_ENABLED=true
+```
+
+> **Disk note:** the full local stack (Ollama + models + ChromaDB, plus torch and a CrossEncoder if you enable reranking) needs roughly 6-10 GB of free space.
+
+Endpoints (all return `503` with a clear reason when RAG is disabled or its deps are absent):
+
+- `GET /api/rag/status` - readiness, configured models, and indexed-chunk count
+- `POST /api/rag/index` - `{ "text": "...", "source": "meeting-2026-07-15" }`, indexes a transcript (incremental - unchanged sources are skipped)
+- `POST /api/rag/ask` - `{ "question": "..." }`, returns a grounded answer plus citations
+
+Configuration lives in `backend/.env` (`OLLAMA_BASE_URL`, `RAG_EMBED_MODEL`, `RAG_LLM_MODEL`, `RAG_RERANK`, and retrieval tuning like `RAG_TOP_K`). This is a backend feature today; a frontend "ask your transcripts" panel is a planned follow-up.
+
 ### Testing the deployment
 
 1. Open the frontend at `http://localhost:3000`.

@@ -19,6 +19,18 @@ dev = [
     "ruff>=0.8.0",
     "black>=24.0.0",
 ]
+# Local, fully-offline RAG + search over transcripts (Ollama-backed).
+# Install with: uv sync --extra rag   (adds ~a few hundred MB; the optional
+# reranker below pulls torch + a CrossEncoder model, so it is a separate extra).
+rag = [
+    "chromadb>=0.5.15",
+    "rank-bm25>=0.2.2",
+]
+# CrossEncoder reranking (ObsidianRAG-style). Heavy: pulls torch and downloads
+# a cross-encoder model on first use. Enable with RAG_RERANK=true.
+rag-rerank = [
+    "sentence-transformers>=3.0.0",
+]
 
 [tool.black]
 line-length = 88
