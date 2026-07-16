@@ -125,8 +125,9 @@
     <h1>Try it - right here in your browser.</h1>
     <p class="lede">
       This demo runs the same idea as the full app, shrunk to fit a static page: OpenAI's Whisper
-      (tiny.en) executes <b>on your device</b> via WebAssembly/WebGPU. The full local app uses a larger
-      Whisper model plus a local LLM for cleanup.
+      (tiny.en) executes <b>on your device</b> via WebAssembly/WebGPU, and you can then <b>search and
+      ask questions</b> across your transcripts with in-browser embeddings (local RAG). The full local
+      app uses a larger Whisper model plus a local LLM for cleanup and retrieval.
     </p>
     <span class="privacy">🔒 Nothing is uploaded - audio and text stay on your device</span>
   </div>
@@ -187,6 +188,34 @@
         <button class="copy" data-copy="cleaned">Copy</button>
       </div>
       <textarea id="cleaned" readonly></textarea>
+    </div>
+
+    <div class="panel">
+      <h2>3 · Ask your transcripts (local RAG)</h2>
+      <p class="sub">
+        Semantic search over your transcripts, running <b>100% in your browser</b>
+        (all-MiniLM embeddings via WebAssembly/WebGPU). Index some transcripts,
+        then ask - every answer cites the passages it came from. Nothing is
+        uploaded. Optionally add an LLM endpoint above to synthesize a written
+        answer; otherwise the most relevant passages are shown.
+      </p>
+      <div class="controls">
+        <button class="btn" id="ragIndexBtn">➕ Index current transcript</button>
+        <button class="btn ghost" id="ragSampleBtn">Load sample transcripts</button>
+        <span class="status" id="ragCount" style="margin:0;align-self:center;">0 passages indexed</span>
+      </div>
+      <div class="controls" style="margin-top:12px;">
+        <input
+          id="ragQ"
+          class="drop"
+          style="cursor:text;text-align:left;flex:1 1 260px;"
+          placeholder="Ask a question about your transcripts..."
+          aria-label="Question about your transcripts"
+        />
+        <button class="btn primary" id="ragAskBtn">Ask</button>
+      </div>
+      <div class="status" id="ragStatus"></div>
+      <div id="ragAnswer"></div>
     </div>
 
   </div>
@@ -371,6 +400,196 @@ document.querySelectorAll('.copy').forEach((b) =>
     setTimeout(() => (b.textContent = old), 1200);
   })
 );
+
+// ==========================================================================
+// Local RAG: in-browser semantic search over transcripts.
+// Embeddings run client-side with all-MiniLM (transformers.js). Retrieval is
+// hybrid (cosine + keyword overlap); answers cite their source passages.
+// Generation is optional and reuses the LLM endpoint fields above.
+// ==========================================================================
+const ragStatus = (html) => { $('ragStatus').innerHTML = html; };
+let embedder = null;
+let embedderLoading = null;
+const ragChunks = []; // { source, text, vec: Float32Array }
+
+async function transformers() {
+  if (!window.__transformers) {
+    window.__transformers = await import(
+      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.3'
+    );
+  }
+  return window.__transformers;
+}
+
+async function getEmbedder() {
+  if (embedder) return embedder;
+  if (embedderLoading) return embedderLoading;
+  embedderLoading = (async () => {
+    ragStatus('Loading embedding model (all-MiniLM, ~23 MB, cached after first load)…');
+    const { pipeline } = await transformers();
+    const device = navigator.gpu ? 'webgpu' : 'wasm';
+    embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { device });
+    ragStatus('');
+    return embedder;
+  })();
+  return embedderLoading;
+}
+
+async function embed(texts) {
+  const pipe = await getEmbedder();
+  const out = await pipe(texts, { pooling: 'mean', normalize: true });
+  return out.tolist().map((a) => Float32Array.from(a)); // normalized rows
+}
+
+function ragChunk(text) {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (!clean) return [];
+  // Split into ~500-char passages on sentence boundaries.
+  const sentences = clean.match(/[^.!?]+[.!?]*/g) || [clean];
+  const out = [];
+  let buf = '';
+  for (const s of sentences) {
+    if ((buf + s).length > 500 && buf) { out.push(buf.trim()); buf = ''; }
+    buf += s;
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out;
+}
+
+function cosine(a, b) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
+  return d; // vectors are normalized
+}
+
+function keywordOverlap(query, text) {
+  const q = new Set(query.toLowerCase().match(/\w+/g) || []);
+  if (!q.size) return 0;
+  const words = text.toLowerCase().match(/\w+/g) || [];
+  let hit = 0;
+  for (const w of words) if (q.has(w)) hit++;
+  return hit / Math.max(words.length, 1);
+}
+
+function updateRagCount() {
+  const sources = new Set(ragChunks.map((c) => c.source)).size;
+  $('ragCount').textContent =
+    `${ragChunks.length} passage(s) from ${sources} transcript(s) indexed`;
+}
+
+async function indexText(source, text) {
+  const chunks = ragChunk(text);
+  if (!chunks.length) return 0;
+  ragStatus(`Embedding ${chunks.length} passage(s) from "${source}"…`);
+  const vecs = await embed(chunks);
+  chunks.forEach((t, i) => ragChunks.push({ source, text: t, vec: vecs[i] }));
+  ragStatus('');
+  updateRagCount();
+  return chunks.length;
+}
+
+$('ragIndexBtn').addEventListener('click', async () => {
+  const text = $('raw').value.trim();
+  if (!text) { ragStatus('<span class="err">Transcribe or paste something first, then index it.</span>'); return; }
+  $('ragIndexBtn').disabled = true;
+  try {
+    const source = `transcript ${new Set(ragChunks.map((c) => c.source)).size + 1}`;
+    const n = await indexText(source, text);
+    ragStatus(`<span class="ok">Indexed ${n} passage(s).</span>`);
+  } catch (e) {
+    ragStatus(`<span class="err">Indexing failed: ${e.message || e}</span>`);
+  } finally {
+    $('ragIndexBtn').disabled = false;
+  }
+});
+
+const SAMPLES = [
+  ['q3-planning', 'In the Q3 planning meeting Sarah said the budget review is next Tuesday at 3 PM. We agreed to migrate the billing service to the new API by the end of the quarter. Priya will own the data migration and report progress every Friday.'],
+  ['standup', 'Daily standup: the login bug is fixed and deployed to production. Marcus is on call this weekend. The demo for the Acme client is scheduled for Thursday at 10 AM in the main conference room.'],
+  ['research-notes', 'The study enrolled 200 patients across three sites. Primary endpoint was overall survival at 12 months. Dr. Chen noted the imaging protocol needs a second radiologist review before we lock the dataset.'],
+];
+
+$('ragSampleBtn').addEventListener('click', async () => {
+  $('ragSampleBtn').disabled = true;
+  try {
+    for (const [src, txt] of SAMPLES) await indexText(src, txt);
+    ragStatus('<span class="ok">Sample transcripts indexed. Try asking a question.</span>');
+  } catch (e) {
+    ragStatus(`<span class="err">Failed to load samples: ${e.message || e}</span>`);
+  } finally {
+    $('ragSampleBtn').disabled = false;
+  }
+});
+
+async function ragAsk() {
+  const q = $('ragQ').value.trim();
+  if (!q) return;
+  if (!ragChunks.length) {
+    ragStatus('<span class="err">Nothing indexed yet - index a transcript or load the samples.</span>');
+    return;
+  }
+  $('ragAskBtn').disabled = true;
+  $('ragAnswer').innerHTML = '';
+  try {
+    ragStatus('Searching your transcripts (on-device)…');
+    const [qv] = await embed([q]);
+    const ranked = ragChunks
+      .map((c) => ({ ...c, score: 0.7 * cosine(qv, c.vec) + 0.3 * keywordOverlap(q, c.text) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4);
+    ragStatus('');
+
+    // Optional LLM synthesis if an endpoint is configured above.
+    const base = $('baseUrl').value.trim().replace(/\/+$/, '');
+    const model = $('model').value.trim();
+    const key = $('apiKey').value.trim();
+    let answerHtml = '';
+    if (base && model) {
+      ragStatus('Synthesizing an answer with your LLM endpoint…');
+      const context = ranked.map((r) => `[${r.source}] ${r.text}`).join('\n\n');
+      const res = await fetch(`${base}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: 'Answer using ONLY the provided transcript excerpts. Cite sources inline like [source]. If the excerpts do not contain the answer, say so.' },
+            { role: 'user', content: `Excerpts:\n${context}\n\nQuestion: ${q}` },
+          ],
+          temperature: 0.2,
+        }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const json = await res.json();
+      const text = (json.choices?.[0]?.message?.content || '').trim();
+      answerHtml = `<div class="panel" style="margin-top:14px;"><p class="answer-text" style="margin:0;white-space:pre-wrap;">${escapeHtml(text)}</p></div>`;
+      ragStatus('');
+    } else {
+      answerHtml = '<p class="note" style="margin:14px 0 6px;">Most relevant passages (add an LLM endpoint above for a synthesized answer):</p>';
+    }
+
+    const cites = ranked
+      .map((r) => `<details class="citation" style="background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13.5px;">
+          <summary style="cursor:pointer;color:var(--accent-2);display:flex;justify-content:space-between;gap:12px;">
+            <span>${escapeHtml(r.source)}</span><span style="color:var(--muted);">${r.score.toFixed(3)}</span>
+          </summary>
+          <p style="margin:8px 0 0;color:var(--muted);line-height:1.5;">${escapeHtml(r.text)}</p>
+        </details>`)
+      .join('');
+    $('ragAnswer').innerHTML = answerHtml + `<div style="margin-top:6px;"><span class="note">Sources</span>${cites}</div>`;
+  } catch (e) {
+    ragStatus(`<span class="err">Ask failed: ${String(e.message || e).slice(0, 200)}</span>`);
+  } finally {
+    $('ragAskBtn').disabled = false;
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+$('ragAskBtn').addEventListener('click', () => void ragAsk());
+$('ragQ').addEventListener('keydown', (e) => { if (e.key === 'Enter') void ragAsk(); });
 </script>
 
 </body>
