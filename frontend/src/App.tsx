@@ -8,6 +8,9 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { TranscriptionResults } from './components/TranscriptionResults';
 import { ErrorMessage } from './components/ErrorMessage';
 import { Footer } from './components/Footer';
+import { DemoBanner } from './components/DemoBanner';
+
+const IS_DEMO = import.meta.env.VITE_DEMO_MODE === 'true';
 
 interface TranscriptionResponse {
   success: boolean;
@@ -314,6 +317,8 @@ function App() {
     <div className={styles.app}>
       <div className={styles.container}>
         <Header />
+
+        {IS_DEMO && <DemoBanner />}
 
         <RecordButton
           isRecording={isRecording}

@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "frontend/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -28,14 +29,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Build the real React frontend in demo mode: the /api/* calls are
+      # mocked in the browser (src/demo/mockApi.ts) since Pages is static.
+      - name: Build demo frontend
+        working-directory: frontend
+        env:
+          VITE_DEMO_MODE: "true"
+        run: |
+          npm ci
+          npm run build -- --base=/${{ github.event.repository.name }}/demo/
+
+      # Portfolio landing page at /, interactive demo at /demo/.
+      - name: Stage site
+        run: |
+          mkdir -p _site/demo
+          cp -R site/. _site/
+          cp -R frontend/dist/. _site/demo/
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      # Static portfolio page - served as-is (no Jekyll build).
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment
