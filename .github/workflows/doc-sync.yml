@@ -1,0 +1,50 @@
+# Durable daily doc sync. Runs the self-documenter agent and opens a PR with
+# STATUS.md / README / ADR updates.
+# Requires: repo on GitHub + ANTHROPIC_API_KEY secret. Until then, run the agent
+# from a local Claude Code session (invoke the self-documenter subagent) or manually.
+name: Doc Sync
+
+on:
+  schedule:
+    - cron: '43 13 * * *' # daily, 13:43 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  doc-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run self-documenter
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Act as the self-documenter agent defined in .claude/agents/self-documenter.md.
+            Follow it exactly: diff-driven review, update STATUS.md and drifted markdown,
+            ADRs in docs/adr/ only for significant architectural changes. Docs only - no
+            code changes.
+
+      - name: Create PR if docs changed
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            BRANCH="doc-sync-$(date +%Y%m%d)"
+            git checkout -b "$BRANCH"
+            git config user.name "doc-sync bot"
+            git config user.email "actions@github.com"
+            git add -A
+            git commit -m "docs: daily self-documenter sync"
+            git push -u origin "$BRANCH"
+            gh pr create --fill --title "docs: daily sync $(date +%Y-%m-%d)"
+          else
+            echo "No doc drift."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
