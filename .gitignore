@@ -61,7 +61,6 @@ backend/static/
 
 .claude
 tmp
-CLAUDE.md
 
 *exercise.py
 STUDENT_PROFILE.md
