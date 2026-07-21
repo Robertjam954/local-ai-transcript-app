@@ -1,0 +1,17 @@
+{
+  "target": "main",
+  "branchProtection": {
+    "requirePullRequest": true,
+    "requiredApprovingReviewCount": 1,
+    "dismissStaleReviews": true,
+    "requireStatusChecks": true,
+    "requiredStatusChecks": ["validate"],
+    "requireUpToDateBranch": true
+  },
+  "autoDeployment": {
+    "enabled": true,
+    "trigger": "push",
+    "branches": ["main"],
+    "workflow": ".github/workflows/deploy.yml"
+  }
+}

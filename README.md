@@ -23,6 +23,7 @@ urlFragment: ai-transcript-app-voice-summarizer
 
 # AI Transcript App - Voice transcription and cleanup
 
+**🌐 Live demo:** Try an in-browser version at [robertjam954.github.io/local-ai-transcript-app/demo.html](https://robertjam954.github.io/local-ai-transcript-app/demo.html) - Whisper runs on-device via WebAssembly/WebGPU, so no audio is uploaded anywhere. The [portfolio page](https://robertjam954.github.io/local-ai-transcript-app/) has the full project overview.
 
 ##### Table of Contents
 - [AI Transcript App - Voice transcription and cleanup](#ai-transcript-app---voice-transcription-and-cleanup)
@@ -141,7 +142,7 @@ The recommended setup is a devcontainer, which provisions the app and an Ollama 
 - [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
 - A machine with 8+ CPU cores and 16GB RAM recommended (the default setup runs an LLM on CPU)
 
-For manual installation you will instead need Python 3.12+, Node.js 24+, [uv](https://docs.astral.sh/uv/), and an LLM server ([Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/)).
+For manual installation you will instead need Python 3.12 or 3.13 (3.14 is not yet supported - `ctranslate2`, used by faster-whisper, has no 3.14 wheels; pin with `uv run --python 3.13`), Node.js 24+, [uv](https://docs.astral.sh/uv/), and an LLM server ([Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/)).
 
 ### Products used
 
@@ -191,6 +192,8 @@ The devcontainer is the easiest supported method for beginners. If you install m
 - Install dependencies with `uv sync` (backend) and `npm install` (frontend)
 - Start your LLM server and pull a model: `ollama pull llama3.1:8b`
 
+> **⚠️ Running outside the devcontainer?** The devcontainer default `LLM_BASE_URL=http://ollama:11434/v1` uses a Docker-internal hostname that does not resolve on the host. Use `http://localhost:11434/v1` for a host-installed Ollama, or `http://localhost:1234/v1` with `LLM_API_KEY=lm-studio` for LM Studio (start its server with `lms server start`).
+
 ### Running the app
 
 Open **two terminals** and run:
@@ -214,6 +217,38 @@ npm install && npm run dev
 > **Note:** `npm install` ensures dependencies are up-to-date (useful after switching branches).
 
 **Browser:** Open `http://localhost:3000`
+
+### Container deployment (Docker + Docker Compose)
+
+This repository now includes production Docker assets for the React frontend and FastAPI backend.
+
+1. Optionally export deployment settings for the backend:
+
+   ```bash
+   export WHISPER_MODEL=base.en
+   export LLM_BASE_URL=http://host.docker.internal:11434/v1
+   export LLM_API_KEY=ollama
+   export LLM_MODEL=gemma3:4b
+   ```
+
+2. Build and start the production stack:
+
+   ```bash
+   docker compose up --build
+   ```
+
+3. Open the app at `http://localhost` and, if needed, the API directly at `http://localhost:3000/api/status`.
+
+The frontend container serves the Vite build through nginx on port **80** and proxies `/api/*` requests to the backend container on port **3000**. A named Docker volume persists the backend model cache between restarts so Whisper assets do not need to be downloaded every time.
+
+### GitHub Actions Azure deployment
+
+`.github/workflows/deploy.yml` validates the frontend and backend on every pull request, then on pushes to `main` it builds both Docker images, pushes them to Azure Container Registry, and deploys the stack to Azure Container Instances.
+
+Configure the workflow with these repository settings before enabling deployment:
+
+- **Variables:** `ACR_NAME`, `ACR_LOGIN_SERVER`, `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `ACI_CONTAINER_GROUP`, `ACI_DNS_LABEL`, and optional `LLM_BASE_URL`, `LLM_MODEL`, `WHISPER_MODEL`
+- **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, and optional `LLM_API_KEY`
 
 ### Web app quick start (Azure App Service)
 
@@ -267,6 +302,34 @@ The devcontainer automatically creates `backend/.env` with working Ollama defaul
 - `LLM_BASE_URL` - API endpoint
 - `LLM_API_KEY` - API key
 - `LLM_MODEL` - Model name
+
+### Local RAG over your transcripts (optional, fully offline)
+
+An optional, **100% local** retrieval layer lets you search and ask questions across your past transcripts. It is **off by default** and its dependencies are not installed unless you opt in, so the core app is unaffected. The design is adapted from [ObsidianRAG](https://github.com/Vasallo94/ObsidianRAG) - hybrid vector + BM25 retrieval, optional CrossEncoder reranking, incremental indexing, and answers with source citations - but kept dependency-light: [ChromaDB](https://www.trychroma.com/) for vectors and [Ollama](https://ollama.com/) (via its OpenAI-compatible endpoint) for both embeddings and generation.
+
+To enable it:
+
+```bash
+# 1. Install Ollama and pull an embedding + chat model
+ollama pull nomic-embed-text
+ollama pull gemma3
+
+# 2. Install the optional RAG dependencies (add --extra rag-rerank for reranking)
+cd backend && uv sync --extra rag
+
+# 3. Turn it on in backend/.env
+RAG_ENABLED=true
+```
+
+> **Disk note:** the full local stack (Ollama + models + ChromaDB, plus torch and a CrossEncoder if you enable reranking) needs roughly 6-10 GB of free space.
+
+Endpoints (all return `503` with a clear reason when RAG is disabled or its deps are absent):
+
+- `GET /api/rag/status` - readiness, configured models, and indexed-chunk count
+- `POST /api/rag/index` - `{ "text": "...", "source": "meeting-2026-07-15" }`, indexes a transcript (incremental - unchanged sources are skipped)
+- `POST /api/rag/ask` - `{ "question": "..." }`, returns a grounded answer plus citations
+
+Configuration lives in `backend/.env` (`OLLAMA_BASE_URL`, `RAG_EMBED_MODEL`, `RAG_LLM_MODEL`, `RAG_RERANK`, and retrieval tuning like `RAG_TOP_K`). This is a backend feature today; a frontend "ask your transcripts" panel is a planned follow-up.
 
 ### Testing the deployment
 

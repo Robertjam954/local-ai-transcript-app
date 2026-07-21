@@ -121,6 +121,90 @@ async def clean_text(request: CleanRequest):
         ) from e
 
 
+# --------------------------------------------------------------------------
+# Optional local RAG + search over transcripts (fully offline, Ollama-backed).
+#
+# Feature-flagged and dependency-guarded: the routes below are always mounted,
+# but the RAG service and its heavy deps (chromadb, rank-bm25, optional
+# sentence-transformers) load lazily only when RAG is enabled and used. When
+# RAG_ENABLED is false or the deps are absent, the routes return 503 with a
+# clear reason and the core transcription app is completely unaffected.
+# See backend/rag/ and RAG setup notes in the README.
+# --------------------------------------------------------------------------
+
+_rag_service = None
+
+
+class RagIndexRequest(BaseModel):
+    text: str
+    source: str
+
+
+class RagAskRequest(BaseModel):
+    question: str
+
+
+def _get_rag_service():
+    """Lazily construct the RagService, or return None with a reason string."""
+    global _rag_service
+    if _rag_service is not None:
+        return _rag_service, None
+    try:
+        from rag.service import RagService
+    except Exception as e:  # noqa: BLE001 - surface import issues to the caller
+        return None, f"RAG unavailable: {e}"
+    _rag_service = RagService()
+    return _rag_service, None
+
+
+@app.get("/api/rag/status")
+async def rag_status():
+    svc, reason = _get_rag_service()
+    if svc is None:
+        return {"enabled": False, "available": False, "reason": reason}
+    return svc.status()
+
+
+@app.post("/api/rag/index")
+async def rag_index(request: RagIndexRequest):
+    svc, reason = _get_rag_service()
+    if svc is None or not svc.config.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail=reason or "RAG is disabled. Set RAG_ENABLED=true and install the rag extra.",
+        )
+    try:
+        written = svc.index_transcript(text=request.text, source=request.source)
+        return {"success": True, "indexed_chunks": written, "source": request.source}
+    except Exception as e:
+        print(f"❌ RAG indexing failed: {e}")
+        raise HTTPException(
+            status_code=502, detail="RAG indexing failed. Check the backend terminal."
+        ) from e
+
+
+@app.post("/api/rag/ask")
+async def rag_ask(request: RagAskRequest):
+    svc, reason = _get_rag_service()
+    if svc is None or not svc.config.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail=reason or "RAG is disabled. Set RAG_ENABLED=true and install the rag extra.",
+        )
+    try:
+        result = svc.ask(request.question)
+        return {
+            "success": True,
+            "answer": result.answer,
+            "citations": [vars(c) for c in result.citations],
+        }
+    except Exception as e:
+        print(f"❌ RAG query failed: {e}")
+        raise HTTPException(
+            status_code=502, detail="RAG query failed. Check the backend terminal."
+        ) from e
+
+
 # Serve the built React SPA (single-origin deployment). The frontend build is
 # staged into backend/static by the azd `prepackage` hook (see azure.yaml /
 # scripts/build_frontend.*). Mounted at "/" AFTER the /api/* routes above so the

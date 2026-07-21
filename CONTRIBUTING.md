@@ -12,7 +12,7 @@ This is a monorepo with a Python FastAPI backend (`backend/`) and a React + Type
 
 ### Manual setup
 
-Requires Python 3.12+, Node.js 24+, [uv](https://docs.astral.sh/uv/), and an OpenAI-compatible LLM server (Ollama or LM Studio).
+Requires Python 3.12 or 3.13 (not 3.14 - `ctranslate2` has no 3.14 wheels yet; use `uv run --python 3.13`), Node.js 24+, [uv](https://docs.astral.sh/uv/), and an OpenAI-compatible LLM server (Ollama or LM Studio). Outside the devcontainer, point `LLM_BASE_URL` at `http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) rather than the Docker-internal `http://ollama:11434/v1`.
 
 - Backend: `cd backend && uv sync`, then copy `.env.example` to `.env` and configure `WHISPER_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`.
 - Frontend: `cd frontend && npm install`.

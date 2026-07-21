@@ -1,0 +1,199 @@
+name: Validate and deploy containers
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+  ACI_CONTAINER_GROUP: ${{ vars.ACI_CONTAINER_GROUP }}
+  ACI_DNS_LABEL: ${{ vars.ACI_DNS_LABEL }}
+  AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  BACKEND_IMAGE_NAME: local-ai-transcript-app-backend
+  FRONTEND_IMAGE_NAME: local-ai-transcript-app-frontend
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Validate frontend
+        working-directory: frontend
+        run: |
+          npm run type-check
+          npm run lint
+          npm run build
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --extra dev
+
+      - name: Validate backend
+        working-directory: backend
+        run: |
+          uv run ruff check .
+          uv run black . --check
+
+      - name: Validate Docker Compose configuration
+        run: |
+          docker compose config
+          docker compose build frontend backend
+
+  build-and-deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to Azure Container Registry
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build and push backend image
+        run: |
+          docker build \
+            --file backend/Dockerfile \
+            --tag "$ACR_LOGIN_SERVER/$BACKEND_IMAGE_NAME:${GITHUB_SHA}" \
+            --tag "$ACR_LOGIN_SERVER/$BACKEND_IMAGE_NAME:latest" \
+            backend
+          docker push "$ACR_LOGIN_SERVER/$BACKEND_IMAGE_NAME:${GITHUB_SHA}"
+          docker push "$ACR_LOGIN_SERVER/$BACKEND_IMAGE_NAME:latest"
+
+      - name: Build and push frontend image
+        run: |
+          docker build \
+            --file frontend/Dockerfile \
+            --tag "$ACR_LOGIN_SERVER/$FRONTEND_IMAGE_NAME:${GITHUB_SHA}" \
+            --tag "$ACR_LOGIN_SERVER/$FRONTEND_IMAGE_NAME:latest" \
+            frontend
+          docker push "$ACR_LOGIN_SERVER/$FRONTEND_IMAGE_NAME:${GITHUB_SHA}"
+          docker push "$ACR_LOGIN_SERVER/$FRONTEND_IMAGE_NAME:latest"
+
+      - name: Read Azure Container Registry credentials
+        id: acr-creds
+        run: |
+          echo "username=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)" >> "$GITHUB_OUTPUT"
+          echo "registry_password=$(az acr credential show --name "$ACR_NAME" --query 'passwords[0].value' -o tsv)" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Azure Container Instances group
+        env:
+          ACR_PASSWORD: ${{ steps.acr-creds.outputs.registry_password }}
+          ACR_USERNAME: ${{ steps.acr-creds.outputs.username }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          WHISPER_MODEL: ${{ vars.WHISPER_MODEL }}
+        run: |
+          cat <<EOF > /tmp/local-ai-transcript-app-aci.yaml
+          apiVersion: 2021-10-01
+          location: ${AZURE_LOCATION}
+          name: ${ACI_CONTAINER_GROUP}
+          properties:
+            imageRegistryCredentials:
+              - server: ${ACR_LOGIN_SERVER}
+                username: ${ACR_USERNAME}
+                password: ${ACR_PASSWORD}
+            containers:
+              - name: frontend
+                properties:
+                  image: ${ACR_LOGIN_SERVER}/${FRONTEND_IMAGE_NAME}:${GITHUB_SHA}
+                  environmentVariables:
+                    - name: API_UPSTREAM
+                      value: "127.0.0.1:3000"
+                  ports:
+                    - port: 80
+                  resources:
+                    requests:
+                      cpu: 1
+                      memoryInGB: 1.5
+              - name: backend
+                properties:
+                  image: ${ACR_LOGIN_SERVER}/${BACKEND_IMAGE_NAME}:${GITHUB_SHA}
+                  environmentVariables:
+                    - name: PORT
+                      value: "3000"
+                    - name: WHISPER_MODEL
+                      value: "${WHISPER_MODEL:-base.en}"
+                    - name: LLM_BASE_URL
+                      value: "${LLM_BASE_URL:-http://host.docker.internal:11434/v1}"
+                    - name: LLM_MODEL
+                      value: "${LLM_MODEL:-gemma3:4b}"
+                    - name: LLM_API_KEY
+                      secureValue: "${LLM_API_KEY:-ollama}"
+                  ports:
+                    - port: 3000
+                  resources:
+                    requests:
+                      cpu: 2
+                      memoryInGB: 4
+            ipAddress:
+              dnsNameLabel: ${ACI_DNS_LABEL}
+              ports:
+                - port: 80
+                  protocol: TCP
+              type: Public
+            osType: Linux
+            restartPolicy: Always
+          tags:
+            app: local-ai-transcript-app
+            environment: production
+          EOF
+
+          if az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$ACI_CONTAINER_GROUP" >/dev/null 2>&1; then
+            az container delete \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$ACI_CONTAINER_GROUP" \
+              --yes
+
+            az container wait \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$ACI_CONTAINER_GROUP" \
+              --deleted
+          fi
+
+          az container create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --file /tmp/local-ai-transcript-app-aci.yaml

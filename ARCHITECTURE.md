@@ -8,7 +8,10 @@ AI Transcript App is a two-tier web application that turns spoken audio into cle
 ai-transcript-app-voice-summarizer/
 ├── backend/        FastAPI service: transcription + LLM cleaning
 ├── frontend/       React + Vite single-page app
-└── .devcontainer/  Docker Compose dev environment (app + Ollama)
+├── .devcontainer/  Docker Compose dev environment (app + Ollama)
+├── site/           Static portfolio page + in-browser demo (GitHub Pages)
+├── infra/          Optional Azure App Service deployment (azd + Bicep)
+└── scripts/        Frontend build/stage helpers for the azd deploy
 ```
 
 The frontend and backend run as separate processes. In development the Vite dev server (port 3000) proxies all `/api/*` requests to the backend (port 8000), so the browser talks to a single origin. The default LLM provider, Ollama, runs as a third service (port 11434).
@@ -52,6 +55,10 @@ Located in `frontend/`. React 19 + TypeScript, built and served by Vite 7. UI ic
 - Frontend: React 19, TypeScript, Vite, lucide-react; tooling: ESLint, Prettier.
 - Local models: Whisper (`base.en` default) for speech-to-text; Ollama-served LLM (`gemma3:4b` default) for cleaning. Any OpenAI-compatible endpoint (LM Studio, OpenAI, etc.) can be substituted via `.env`.
 - Dev environment: Docker Compose devcontainer running the app container alongside an `ollama/ollama` service with a persistent model volume.
+
+## Portfolio Site and In-Browser Demo
+
+`site/` is a standalone static site deployed to GitHub Pages by `.github/workflows/pages.yml` (live at [robertjam954.github.io/local-ai-transcript-app](https://robertjam954.github.io/local-ai-transcript-app/)). It is intentionally decoupled from the app: `index.html` is a portfolio overview, and `demo.html` is a self-contained demo that runs Whisper `tiny.en` **in the visitor's browser** with [transformers.js](https://huggingface.co/docs/transformers.js) (WebGPU, falling back to WASM). The demo has no backend - audio never leaves the visitor's device - and its optional LLM-cleanup step calls whatever OpenAI-compatible endpoint the visitor supplies, directly from their browser. The full app (this repo's backend + frontend) remains the local-first, higher-quality experience: larger Whisper model, local LLM cleanup, no keys required.
 
 ## How It Fits Together
 
