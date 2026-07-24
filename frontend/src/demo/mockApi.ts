@@ -78,6 +78,148 @@ function cleanTranscript(raw: string): string {
   return text;
 }
 
+// ---- Simulated RAG over indexed transcripts (in-memory, keyword-scored) ----
+
+interface RagChunk {
+  source: string;
+  text: string;
+}
+
+const ragChunks: RagChunk[] = [];
+const ragIndexedTexts = new Set<string>();
+
+const STOPWORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'and',
+  'or',
+  'but',
+  'is',
+  'are',
+  'was',
+  'were',
+  'to',
+  'of',
+  'in',
+  'on',
+  'for',
+  'with',
+  'about',
+  'what',
+  'which',
+  'who',
+  'how',
+  'when',
+  'where',
+  'why',
+  'did',
+  'do',
+  'does',
+  'that',
+  'this',
+  'it',
+  'i',
+  'we',
+  'you',
+  'they',
+]);
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 1 && !STOPWORDS.has(w));
+}
+
+function chunkTranscript(text: string, source: string): RagChunk[] {
+  const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
+  const chunks: RagChunk[] = [];
+  let current = '';
+
+  for (const sentence of sentences) {
+    if (current && (current + sentence).length > 240) {
+      chunks.push({ source, text: current.trim() });
+      current = '';
+    }
+    current += sentence;
+  }
+  if (current.trim()) {
+    chunks.push({ source, text: current.trim() });
+  }
+  return chunks;
+}
+
+function scoreChunk(questionWords: string[], chunk: RagChunk): number {
+  if (questionWords.length === 0) return 0;
+  const chunkWords = new Set(tokenize(chunk.text));
+  const hits = questionWords.filter((w) => chunkWords.has(w)).length;
+  return hits / questionWords.length;
+}
+
+function ragIndex(body: string): {
+  success: boolean;
+  indexed_chunks: number;
+  source: string;
+} {
+  const parsed = JSON.parse(body) as { text?: string; source?: string };
+  const text = parsed.text ?? '';
+  const source = parsed.source ?? 'transcript';
+
+  if (ragIndexedTexts.has(text)) {
+    return { success: true, indexed_chunks: 0, source };
+  }
+  ragIndexedTexts.add(text);
+
+  const chunks = chunkTranscript(text, source);
+  ragChunks.push(...chunks);
+  return { success: true, indexed_chunks: chunks.length, source };
+}
+
+function ragAsk(body: string): {
+  success: boolean;
+  answer: string;
+  citations: { source: string; score: number; snippet: string }[];
+} {
+  const parsed = JSON.parse(body) as { question?: string };
+  const questionWords = tokenize(parsed.question ?? '');
+
+  if (ragChunks.length === 0) {
+    return {
+      success: true,
+      answer:
+        'No transcripts are indexed yet. Process a transcript above, then click "Index current transcript" and ask again.',
+      citations: [],
+    };
+  }
+
+  const ranked = ragChunks
+    .map((chunk) => ({ chunk, score: scoreChunk(questionWords, chunk) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .filter((r) => r.score > 0);
+
+  if (ranked.length === 0) {
+    return {
+      success: true,
+      answer:
+        'Nothing in your indexed transcripts matches that question. Try asking about something mentioned in a transcript you indexed.',
+      citations: [],
+    };
+  }
+
+  const best = ranked[0];
+  return {
+    success: true,
+    answer: `From your indexed transcripts (simulated retrieval): "${best?.chunk.text ?? ''}"`,
+    citations: ranked.map((r) => ({
+      source: r.chunk.source,
+      score: r.score,
+      snippet: r.chunk.text,
+    })),
+  };
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -128,6 +270,29 @@ window.fetch = async (
       text = parsed.text ?? '';
     }
     return jsonResponse({ success: true, text: cleanTranscript(text) });
+  }
+
+  if (path.endsWith('/api/rag/status')) {
+    return jsonResponse({
+      enabled: true,
+      available: true,
+      llm_model: 'simulated (in-browser)',
+      indexed_chunks: ragChunks.length,
+    });
+  }
+
+  if (path.endsWith('/api/rag/index')) {
+    await delay(600);
+    return jsonResponse(
+      ragIndex(typeof init?.body === 'string' ? init.body : '{}')
+    );
+  }
+
+  if (path.endsWith('/api/rag/ask')) {
+    await delay(900);
+    return jsonResponse(
+      ragAsk(typeof init?.body === 'string' ? init.body : '{}')
+    );
   }
 
   return realFetch(input, init);
