@@ -48,7 +48,11 @@ export function TranscriptSearch({ currentTranscript }: TranscriptSearchProps) {
       const res = await fetch('/api/rag/status');
       setStatus((await res.json()) as RagStatus);
     } catch {
-      setStatus({ enabled: false, available: false, reason: 'backend unreachable' });
+      setStatus({
+        enabled: false,
+        available: false,
+        reason: 'backend unreachable',
+      });
     }
   };
 
@@ -118,8 +122,8 @@ export function TranscriptSearch({ currentTranscript }: TranscriptSearchProps) {
     <div className={styles.container}>
       <Box header="Ask Your Transcripts" icon={Search}>
         <p className={styles.sub}>
-          Fully local retrieval over transcripts you index - answers are grounded
-          in your own recordings, with sources.
+          Fully local retrieval over transcripts you index - answers are
+          grounded in your own recordings, with sources.
           {status.llm_model ? ` Model: ${status.llm_model}.` : ''}
         </p>
 
@@ -176,9 +180,7 @@ export function TranscriptSearch({ currentTranscript }: TranscriptSearchProps) {
                   <details key={i} className={styles.citation}>
                     <summary>
                       {c.source}
-                      <span className={styles.score}>
-                        {c.score.toFixed(3)}
-                      </span>
+                      <span className={styles.score}>{c.score.toFixed(3)}</span>
                     </summary>
                     <p className={styles.snippet}>{c.snippet}</p>
                   </details>
