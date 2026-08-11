@@ -118,6 +118,31 @@ class HybridStore:
     def count(self) -> int:
         return self._collection_handle().count()
 
+    def list_sources(self) -> list[str]:
+        """Distinct source names across all stored chunks, in first-seen order."""
+        got = self._collection_handle().get(include=["metadatas"])
+        seen: list[str] = []
+        for meta in got.get("metadatas") or []:
+            source = (meta or {}).get("source")
+            if source and source not in seen:
+                seen.append(source)
+        return seen
+
+    def get_by_source(self, source: str) -> str:
+        """Full text of one source, chunks concatenated in chunk order.
+
+        Returns "" when the source is unknown.
+        """
+        got = self._collection_handle().get(
+            where={"source": source}, include=["documents", "metadatas"]
+        )
+        docs = got.get("documents") or []
+        metas = got.get("metadatas") or []
+        pairs = sorted(
+            zip(metas, docs), key=lambda pair: (pair[0] or {}).get("chunk", 0)
+        )
+        return "\n".join(doc for _, doc in pairs).strip()
+
     # -- retrieval ---------------------------------------------------------
 
     def _ensure_bm25(self) -> None:

@@ -101,6 +101,28 @@ class NumpyStore:
     def count(self) -> int:
         return len(self._ids)
 
+    def list_sources(self) -> list[str]:
+        """Distinct source names across all stored chunks, in first-seen order."""
+        seen: list[str] = []
+        for meta in self._metas:
+            source = meta.get("source")
+            if source and source not in seen:
+                seen.append(source)
+        return seen
+
+    def get_by_source(self, source: str) -> str:
+        """Full text of one source, chunks concatenated in chunk order.
+
+        Returns "" when the source is unknown.
+        """
+        pairs = [
+            (self._metas[i].get("chunk", 0), self._docs[i])
+            for i in range(len(self._ids))
+            if self._metas[i].get("source") == source
+        ]
+        pairs.sort(key=lambda p: p[0])
+        return "\n".join(doc for _, doc in pairs).strip()
+
     # -- retrieval ---------------------------------------------------------
 
     def _bm25_scores(self, query: str) -> np.ndarray:
